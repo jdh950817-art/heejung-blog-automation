@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>블로그 자동화</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body class="bg-gray-100 min-h-screen font-sans text-sm">
+
+  <!-- 헤더 -->
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
+    <div class="px-5 h-12 flex items-center justify-between max-w-screen-xl mx-auto">
+      <h1 class="text-sm font-bold text-gray-800">✍️ 블로그 자동화</h1>
+      <button id="btn-log" onclick="App.showLogPanel()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-500 hover:bg-gray-100 transition-colors">
+        <span>📋</span><span>로그</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 임시저장 복원 배너 -->
+  <div id="draft-banner" class="draft-banner hidden">
+    <span class="draft-banner-text">📝 이전 작업 중이던 글 "<span id="draft-title-preview"></span>" <span id="draft-time-preview" style="opacity:0.7;font-size:11px;"></span></span>
+    <div class="draft-banner-btns">
+      <button onclick="App.restoreDraft()" class="draft-btn-restore">복원하기</button>
+      <button onclick="App.clearDraft()" class="draft-btn-clear">삭제</button>
+    </div>
+  </div>
+
+  <!-- 대시보드 -->
+  <main class="max-w-screen-xl mx-auto px-5 py-4">
+
+    <!-- 3컬럼 그리드 -->
+    <div class="dashboard-grid">
+
+      <!-- ===== 컬럼 1: 글 작성 ===== -->
+      <div class="flex flex-col gap-3">
+
+        <div class="panel">
+          <div class="panel-header">
+            <span class="panel-icon">📂</span>
+            <span class="panel-title">글 유형 선택</span>
+          </div>
+          <div id="type-buttons" class="flex flex-wrap gap-1.5">
+            <button class="type-btn" data-type="맛집">🍽️ 맛집</button>
+            <button class="type-btn" data-type="육아정보">👶 육아정보</button>
+            <button class="type-btn" data-type="놀러간곳">🎡 놀러간곳</button>
+            <button class="type-btn" data-type="숙소">🏨 숙소</button>
+            <button class="type-btn" data-type="일상">🌸 일상</button>
+            <button class="type-btn" data-type="여행">✈️ 여행</button>
+            <button class="type-btn" data-type="카페">☕ 카페</button>
+            <button class="type-btn" data-type="제품리뷰">📦 제품리뷰</button>
+          </div>
+        </div>
+
+        <div class="panel flex-1">
+          <div class="panel-header">
+            <span class="panel-icon">💬</span>
+            <span class="panel-title">키워드 & 제목</span>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label">키워드</label>
+            <div class="flex gap-2">
+              <input id="keyword-input" type="text" class="field-input flex-1" placeholder="예: 강남 파스타 맛집" />
+              <button id="btn-suggest-title" class="btn-secondary whitespace-nowrap px-3">제목 추천</button>
+            </div>
+          </div>
+
+          <div id="ai-search-area">
+            <button id="btn-ai-search" class="btn-ai-search w-full">
+              🔍 AI 서치 — 주소·영업시간·주차 자동 검색
+            </button>
+            <div id="ai-search-result" class="ai-search-panel hidden"></div>
+          </div>
+          <div class="ai-search-toggle-row">
+            <div class="ai-search-toggle-info">
+              <span class="ai-search-toggle-icon">📝</span>
+              <div>
+                <div class="ai-search-toggle-title">글에 포함</div>
+                <div class="ai-search-toggle-desc">서치 결과를 글 작성 시 반영</div>
+              </div>
+            </div>
+            <label class="ios-toggle">
+              <input type="checkbox" id="ai-search-toggle" />
+              <span class="ios-toggle-slider"></span>
+            </label>
+          </div>
+
+          <div id="title-suggestions" class="hidden mb-3">
+            <p class="text-xs text-gray-500 mb-1.5">추천 제목을 선택하세요</p>
+            <div id="title-list" class="space-y-1.5"></div>
+          </div>
+
+          <div class="field-group mb-0">
+            <label class="field-label">최종 제목</label>
+            <input id="final-title" type="text" class="field-input" placeholder="제목을 선택하거나 직접 입력" />
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ===== 컬럼 3: 사진 + 작성 버튼 ===== -->
+      <div class="flex flex-col gap-3">
+
+        <div class="panel flex-1">
+          <div class="panel-header">
+            <span class="panel-icon">📷</span>
+            <span class="panel-title">사진 관리</span>
+            <span id="photo-count-badge" class="hidden ml-auto text-xs bg-blue-100 text-blue-600 font-semibold px-2 py-0.5 rounded-full"></span>
+          </div>
+          <!-- 사진 팝업 열기 버튼 -->
+          <button id="btn-open-photos" class="upload-zone w-full">
+            <div class="text-xl mb-0.5">📸</div>
+            <div class="text-xs font-medium text-blue-500">사진 관리 열기</div>
+            <div class="text-xs text-gray-400 mt-0.5">클릭해서 사진 추가 및 선별</div>
+          </button>
+        </div>
+
+        <button id="btn-write" class="btn-primary w-full py-3.5">
+          ✨ 글 작성하기
+        </button>
+
+      </div>
+
+    </div>
+
+    <!-- ===== 미리보기 섹션 ===== -->
+    <div id="preview-section" class="panel mt-4 hidden">
+      <div class="panel-header">
+        <span class="panel-icon">📄</span>
+        <span class="panel-title">완성된 글</span>
+        <span id="autosave-indicator" class="autosave-indicator hidden"></span>
+        <div class="ml-auto flex gap-2">
+          <button id="btn-save-supabase" class="btn-secondary">☁️ DB 저장</button>
+          <button id="btn-copy" class="btn-secondary">📋 텍스트 복사</button>
+          <button id="btn-rewrite" class="btn-secondary">🔄 다시 작성</button>
+        </div>
+      </div>
+
+      <div id="preview-loading" class="hidden text-center py-12">
+        <div class="loading-spinner mx-auto mb-3"></div>
+        <p class="text-gray-500 text-sm">Gemini AI가 글을 작성하고 있어요...</p>
+      </div>
+
+      <div id="preview-content" class="hidden">
+        <div id="post-title" class="text-base font-bold text-gray-800 mb-2"></div>
+        <div id="post-tags-area" class="post-tags-area hidden"></div>
+        <div id="post-body" class="prose-blog"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ===== 사진 선별 & 문단 구성 모달 ===== -->
+  <div id="photo-modal" class="composer-modal-overlay hidden">
+    <div class="composer-modal-box">
+
+      <!-- 파일 입력 (모달 박스 최상위 — 모바일에서도 항상 접근 가능) -->
+      <input id="photo-upload" type="file" accept="image/*" multiple class="hidden" />
+
+      <div class="composer-modal-header">
+        <div>
+          <h2 class="text-sm font-bold text-gray-800">📸 사진 선별 및 문단 구성</h2>
+          <p class="text-xs text-gray-500 mt-0.5">사진을 끌어다 문단에 배치하거나 번호 버튼으로 지정하세요</p>
+        </div>
+        <button id="btn-close-photos" class="modal-close">✕</button>
+      </div>
+
+      <!-- 모바일 전용 단계별 마법사 -->
+      <div id="mobile-wizard" class="mobile-wizard">
+        <div id="wizard-steps" class="wizard-steps"></div>
+        <div id="wizard-body" class="wizard-body"></div>
+        <div class="wizard-footer">
+          <button id="wizard-prev" class="wizard-nav-btn">← 이전</button>
+          <span id="wizard-step-info" class="wizard-step-info">1 / 4</span>
+          <button id="wizard-next" class="wizard-nav-btn wizard-nav-next">다음 →</button>
+        </div>
+      </div>
+
+      <div class="composer-modal-body">
+
+        <!-- 왼쪽: 사진 패널 -->
+        <div class="composer-photo-panel">
+          <div class="composer-panel-header">
+            <span class="text-xs font-bold text-gray-700">📷 사진</span>
+            <label for="photo-upload" class="btn-secondary" style="cursor:pointer; font-size:11px; padding:4px 10px;">+ 사진 추가</label>
+          </div>
+          <div class="composer-photo-scroll">
+            <div id="photo-strip" class="photo-strip-grid"></div>
+            <div id="photo-strip-empty" class="strip-empty-state">
+              <div style="font-size:2rem; margin-bottom:8px;">🖼️</div>
+              <p class="text-xs" style="color:#9ca3af;">사진을 추가해주세요</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 오른쪽: 문단 구성 패널 -->
+        <div class="composer-section-panel">
+          <div class="composer-panel-header">
+            <span class="text-xs font-bold text-gray-700">📝 문단 구성</span>
+            <button id="btn-add-compose-section" class="btn-secondary" style="font-size:11px; padding:4px 10px;">+ 문단 추가</button>
+          </div>
+          <div class="composer-section-scroll">
+            <div id="section-builder"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="composer-modal-footer">
+        <span id="composer-photo-info" class="text-xs" style="color:#6b7280;">총 0장 · 0장 배치됨</span>
+        <button id="btn-photo-done" class="btn-primary" style="padding:8px 24px;">선택 완료</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== 태그 선택 모달 ===== -->
+  <div id="tag-modal" class="tag-modal-overlay hidden">
+    <div class="tag-modal-box">
+      <div class="tag-modal-header">
+        <h3>태그 선택</h3>
+        <p>최대 4개까지 선택 가능합니다</p>
+      </div>
+      <div id="tag-list" class="tag-list"></div>
+      <div class="tag-modal-footer">
+        <span id="tag-count-info" class="text-xs" style="color:#6b7280;">0 / 4 선택됨</span>
+        <button id="btn-confirm-tags" class="btn-primary" disabled style="padding:8px 22px;">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 로그 모달 -->
+  <div id="log-modal" class="fixed inset-0 z-50 hidden" style="background:rgba(0,0,0,0.35);">
+    <div style="position:absolute;top:56px;right:16px;width:320px;background:#fff;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.15);overflow:hidden;">
+      <div style="padding:14px 16px 10px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:13px;font-weight:700;color:#1f2937;">📋 작업 로그</span>
+        <button onclick="App.closeLogPanel()" style="font-size:16px;color:#9ca3af;line-height:1;background:none;border:none;cursor:pointer;">✕</button>
+      </div>
+      <div id="log-modal-body" style="padding:14px 16px;"></div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-xs px-4 py-2 rounded-full opacity-0 transition-opacity pointer-events-none z-50 whitespace-nowrap shadow-lg">
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/settings.js"></script>
+  <script src="js/supabase-db.js"></script>
+  <script src="js/gemini.js"></script>
+  <script src="js/photo.js"></script>
+  <script src="js/blog-form.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python scripts (not needed for web deployment)
+*.py
+*.sh
+
+# LaunchD logs
+launchd_out.txt
+launchd_err.txt
+
+# Node
+node_modules/
+*.bak
+
+# Real config (keys stored in Vercel env vars — use config.template.js)
+js/config.js
