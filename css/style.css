@@ -513,6 +513,27 @@ body {
   line-height: 1.4;
 }
 
+.wizard-edit-section-group {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.wizard-edit-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.wizard-edit-empty {
+  font-size: 11px;
+  color: #d1d5db;
+  text-align: center;
+  padding: 12px 0;
+}
+
 .btn-add-section-photo {
   display: inline-flex;
   align-items: center;

@@ -796,6 +796,45 @@ const App = (() => {
         <p style="font-size:13px;">사진을 먼저 추가해주세요</p>
       </div>`;
     }
+
+    // 편집 모드: 문단별로 그룹핑해서 보여주기
+    if (photoEditMode) {
+      const sectionGroups = composeSections.map((sec, si) => {
+        const secPhotos = photos.filter(p => p.sectionId === sec.id);
+        const unassignedHtml = secPhotos.map(p => `
+          <div class="wizard-photo-assign-item assigned">
+            <img class="wizard-assign-thumb" src="${p.dataUrl}" alt="" />
+            <button class="wizard-assign-none-btn" onclick="App.unassignComposedPhoto('${p.id}')" style="margin-left:auto;">해제</button>
+          </div>`).join('');
+        return `
+          <div class="wizard-edit-section-group">
+            <div class="wizard-edit-section-label">${si + 1}. ${escapeHtml(sec.heading || '문단 ' + (si + 1))}</div>
+            ${unassignedHtml || '<div class="wizard-edit-empty">배치된 사진 없음</div>'}
+          </div>`;
+      }).join('');
+
+      const unassigned = photos.filter(p => !p.sectionId);
+      const unassignedItems = unassigned.map(p => {
+        const secBtns = composeSections.map((sec, si) => {
+          return `<button class="wizard-assign-btn" onclick="App.togglePhotoSection('${p.id}', '${sec.id}')">${si + 1}</button>`;
+        }).join('');
+        return `
+          <div class="wizard-photo-assign-item">
+            <img class="wizard-assign-thumb" src="${p.dataUrl}" alt="" />
+            <div class="wizard-assign-btns">${secBtns}</div>
+          </div>`;
+      }).join('');
+
+      return `
+        ${sectionGroups}
+        ${unassigned.length ? `
+          <div class="wizard-edit-section-group" style="border-color:#fbbf24;">
+            <div class="wizard-edit-section-label" style="color:#d97706;">미배치 사진 (${unassigned.length}장)</div>
+            ${unassignedItems}
+          </div>` : ''}`;
+    }
+
+    // 일반 모드: 기존 방식
     const items = photos.map(p => {
       const isAssigned = !!p.sectionId;
       const secBtns = composeSections.map((sec, si) => {
