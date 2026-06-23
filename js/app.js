@@ -1017,6 +1017,10 @@ const App = (() => {
           <div class="section-photos-edit">
             ${renderSectionPhotos(sec, idx)}
           </div>
+          <label class="btn-add-section-photo" title="이 문단에 사진 추가">
+            📸 사진 추가
+            <input type="file" accept="image/*" multiple hidden onchange="App.addPhotoToSection(${idx}, this)" />
+          </label>
         </div>`;
     });
 
@@ -1096,6 +1100,46 @@ const App = (() => {
     syncEditedText();
     postState.sections[sectionIdx].photos.splice(photoIdx, 1);
     renderPostState();
+  }
+
+  function addPhotoToSection(sectionIdx, inputEl) {
+    const files = Array.from(inputEl.files);
+    if (!files.length || !postState) return;
+    syncEditedText();
+
+    const promises = files.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            if (w > 1200) { h = Math.round(h * 1200 / w); w = 1200; }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve({
+              dataUrl: canvas.toDataURL('image/jpeg', 0.85),
+              name: file.name,
+              width: 'full',
+            });
+          };
+          img.onerror = () => resolve({ dataUrl: e.target.result, name: file.name, width: 'full' });
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    Promise.all(promises).then(newPhotos => {
+      postState.sections[sectionIdx].photos.push(...newPhotos);
+      renderPostState();
+      saveDraft();
+      showToast(`문단 ${sectionIdx + 1}에 사진 ${newPhotos.length}장 추가`);
+    });
+
+    inputEl.value = '';
   }
 
   // ===== 문단 재생성 =====
@@ -1499,6 +1543,7 @@ const App = (() => {
     toggleQuote, addSection, removeSection,
     movePhoto, movePhotoToSection,
     togglePhotoWidth, removePreviewPhoto,
+    addPhotoToSection,
     regenSection,
     toggleTag, confirmTags,
     saveSearchInfo, addSearchTip, addSearchMustKnow, addSearchHighlight,
