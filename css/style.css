@@ -499,6 +499,20 @@ body {
 }
 .btn-add-section:hover { border-color: #3b82f6; color: #2563eb; background: #eff6ff; }
 
+.compose-section-heading-readonly {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  flex: 1;
+  padding: 4px 0;
+}
+.compose-section-preview {
+  font-size: 11px;
+  color: #9ca3af;
+  padding: 2px 4px 6px;
+  line-height: 1.4;
+}
+
 .btn-add-section-photo {
   display: inline-flex;
   align-items: center;

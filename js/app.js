@@ -14,6 +14,9 @@ const App = (() => {
   let composeSectionCounter = 0;
   let currentWizardStep = 1;
 
+  // ===== Photo Edit Mode =====
+  let photoEditMode = false;
+
   // ===== AI Search State =====
   let aiSearchInfo = null;
   let aiSearchEnabled = false;
@@ -424,16 +427,87 @@ const App = (() => {
 
   // ===== 사진 팝업 =====
   function openPhotoModal() {
+    if (postState && postState.sections && postState.sections.length) {
+      enterPhotoEditMode();
+    } else {
+      photoEditMode = false;
+    }
+    updatePhotoModalButtons();
     if (isMobile()) currentWizardStep = 1;
     renderComposer();
     document.getElementById('photo-modal').classList.remove('hidden');
     document.body.style.overflow = 'hidden';
   }
 
+  function enterPhotoEditMode() {
+    photoEditMode = true;
+    syncEditedText();
+
+    // 기존 문단 구조를 composer에 복원
+    composeSections = [];
+    composeSectionCounter = 0;
+    PhotoManager.clear();
+
+    postState.sections.forEach((sec, idx) => {
+      composeSectionCounter++;
+      const secId = 's' + composeSectionCounter;
+      composeSections.push({
+        id: secId,
+        heading: sec.heading || '',
+        content: sec.content || '',
+      });
+
+      // 기존 사진을 PhotoManager에 등록 + 섹션에 배치
+      (sec.photos || []).forEach(photo => {
+        const photoId = 'ph_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        const allPhotos = PhotoManager.getAllPhotos();
+        allPhotos.push({
+          id: photoId,
+          file: null,
+          name: photo.name || 'photo',
+          dataUrl: photo.dataUrl,
+          sectionId: secId,
+        });
+      });
+    });
+  }
+
+  function updatePhotoModalButtons() {
+    const doneBtn = document.getElementById('btn-photo-done');
+    if (doneBtn) {
+      doneBtn.textContent = photoEditMode ? '💾 사진 저장' : '✓ 완료';
+    }
+    const addSecBtn = document.getElementById('btn-add-compose-section');
+    if (addSecBtn) addSecBtn.classList.toggle('hidden', photoEditMode);
+  }
+
   function closePhotoModal() {
+    if (photoEditMode) {
+      savePhotoEditToPost();
+    }
     document.getElementById('photo-modal').classList.add('hidden');
     document.body.style.overflow = '';
     updatePhotoBadge();
+  }
+
+  function savePhotoEditToPost() {
+    if (!postState || !photoEditMode) return;
+
+    composeSections.forEach((sec, idx) => {
+      if (idx < postState.sections.length) {
+        const assignedPhotos = PhotoManager.getPhotosForSection(sec.id);
+        postState.sections[idx].photos = assignedPhotos.map(p => ({
+          dataUrl: p.dataUrl,
+          name: p.name || 'photo',
+          width: 'full',
+        }));
+      }
+    });
+
+    renderPostState();
+    saveDraft();
+    photoEditMode = false;
+    showToast('사진 배치가 저장되었습니다');
   }
 
   function updatePhotoBadge() {
@@ -570,7 +644,7 @@ const App = (() => {
                   oninput="App.saveGreeting(this.value)">${escapeHtml(greetingVal)}</textarea>
       </div>`;
 
-    builder.innerHTML = greetingSection + composeSections.map((sec, si) => {
+    builder.innerHTML = (photoEditMode ? '' : greetingSection) + composeSections.map((sec, si) => {
       const assignedPhotos = PhotoManager.getPhotosForSection(sec.id);
       const photosHtml = assignedPhotos.length
         ? assignedPhotos.map(p => `
@@ -579,6 +653,24 @@ const App = (() => {
               <button class="compose-photo-del" onclick="App.unassignComposedPhoto('${p.id}')">✕</button>
             </div>`).join('')
         : `<span class="compose-drop-empty">드래그하거나<br/>번호 버튼으로 배치</span>`;
+
+      if (photoEditMode) {
+        const contentPreview = sec.content ? sec.content.slice(0, 60) + (sec.content.length > 60 ? '…' : '') : '';
+        return `
+          <div class="compose-section" id="csec-${sec.id}">
+            <div class="compose-section-header">
+              <span class="compose-section-num">${si + 1}</span>
+              <span class="compose-section-heading-readonly">${escapeHtml(sec.heading || `문단 ${si + 1}`)}</span>
+            </div>
+            ${contentPreview ? `<div class="compose-section-preview">${escapeHtml(contentPreview)}</div>` : ''}
+            <div class="compose-drop-zone"
+                 ondragover="App.onSectionDragOver(event, this)"
+                 ondragleave="App.onSectionDragLeave(event, this)"
+                 ondrop="App.onSectionDrop(event, this, '${sec.id}')">
+              ${photosHtml}
+            </div>
+          </div>`;
+      }
 
       return `
         <div class="compose-section" id="csec-${sec.id}">
@@ -605,10 +697,16 @@ const App = (() => {
   }
 
   // ===== Mobile Wizard =====
+  function getWizardSteps() {
+    if (photoEditMode) return ['사진추가', '사진배치'];
+    return ['사진추가', '문단구성', '사진배치', '내용작성'];
+  }
+
   function updateWizardStepIndicator() {
     const container = document.getElementById('wizard-steps');
     if (!container) return;
-    const labels = ['사진추가', '문단구성', '사진배치', '내용작성'];
+    const labels = getWizardSteps();
+    const maxStep = labels.length;
     container.innerHTML = labels.map((label, i) => {
       const step = i + 1;
       const cls = step === currentWizardStep ? 'active' : (step < currentWizardStep ? 'completed' : '');
@@ -624,10 +722,10 @@ const App = (() => {
     const nextBtn = document.getElementById('wizard-next');
     const stepInfo = document.getElementById('wizard-step-info');
     if (prevBtn) prevBtn.disabled = (currentWizardStep === 1);
-    if (stepInfo) stepInfo.textContent = `${currentWizardStep} / 4`;
+    if (stepInfo) stepInfo.textContent = `${currentWizardStep} / ${maxStep}`;
     if (nextBtn) {
-      if (currentWizardStep === 4) {
-        nextBtn.textContent = '완료 ✓';
+      if (currentWizardStep === maxStep) {
+        nextBtn.textContent = photoEditMode ? '💾 저장' : '완료 ✓';
         nextBtn.className = 'wizard-nav-btn wizard-nav-done';
       } else {
         nextBtn.textContent = '다음 →';
@@ -640,10 +738,15 @@ const App = (() => {
     const body = document.getElementById('wizard-body');
     if (!body) return;
     const savedScroll = body.scrollTop;
-    if (currentWizardStep === 1) body.innerHTML = renderWizardStep1HTML();
-    else if (currentWizardStep === 2) body.innerHTML = renderWizardStep2HTML();
-    else if (currentWizardStep === 3) body.innerHTML = renderWizardStep3HTML();
-    else if (currentWizardStep === 4) body.innerHTML = renderWizardStep4HTML();
+    if (photoEditMode) {
+      if (currentWizardStep === 1) body.innerHTML = renderWizardStep1HTML();
+      else if (currentWizardStep === 2) body.innerHTML = renderWizardStep3HTML();
+    } else {
+      if (currentWizardStep === 1) body.innerHTML = renderWizardStep1HTML();
+      else if (currentWizardStep === 2) body.innerHTML = renderWizardStep2HTML();
+      else if (currentWizardStep === 3) body.innerHTML = renderWizardStep3HTML();
+      else if (currentWizardStep === 4) body.innerHTML = renderWizardStep4HTML();
+    }
     body.scrollTop = resetScroll ? 0 : savedScroll;
   }
 
@@ -748,7 +851,8 @@ const App = (() => {
   }
 
   function wizardNext() {
-    if (currentWizardStep < 4) {
+    const maxStep = getWizardSteps().length;
+    if (currentWizardStep < maxStep) {
       currentWizardStep++;
       updateWizardStepIndicator();
       renderWizardStep(true);
