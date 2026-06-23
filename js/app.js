@@ -70,7 +70,48 @@ const App = (() => {
       } catch (e) { /* ignore */ }
     }
 
-    return { save, load, clear };
+    async function saveHistory(timestamp, sections) {
+      try {
+        const database = await open();
+        await new Promise((resolve, reject) => {
+          const tx = database.transaction(STORE, 'readwrite');
+          const req = tx.objectStore(STORE).put({ key: `hist_${timestamp}`, sections });
+          req.onsuccess = resolve;
+          req.onerror = reject;
+        });
+      } catch (e) { /* ignore */ }
+    }
+
+    async function loadHistory(timestamp) {
+      try {
+        const database = await open();
+        return await new Promise((resolve) => {
+          const tx = database.transaction(STORE, 'readonly');
+          const req = tx.objectStore(STORE).get(`hist_${timestamp}`);
+          req.onsuccess = () => resolve(req.result ? req.result.sections : null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (e) { return null; }
+    }
+
+    async function deleteHistory(timestamp) {
+      try {
+        const database = await open();
+        const tx = database.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(`hist_${timestamp}`);
+      } catch (e) { /* ignore */ }
+    }
+
+    async function clearAllHistory(timestamps) {
+      try {
+        const database = await open();
+        const tx = database.transaction(STORE, 'readwrite');
+        const store = tx.objectStore(STORE);
+        (timestamps || []).forEach(ts => store.delete(`hist_${ts}`));
+      } catch (e) { /* ignore */ }
+    }
+
+    return { save, load, clear, saveHistory, loadHistory, deleteHistory, clearAllHistory };
   })();
 
   // ===== Draft / 임시저장 =====
@@ -166,6 +207,8 @@ const App = (() => {
     try {
       const raw = localStorage.getItem(HISTORY_KEY);
       const history = raw ? JSON.parse(raw) : [];
+      const photoCount = postState.sections.reduce((sum, sec) => sum + (sec.photos || []).length, 0);
+      const ts = Date.now();
       const item = {
         title: postState.title,
         greeting: postState.greeting || '',
@@ -175,11 +218,27 @@ const App = (() => {
           isQuote: sec.isQuote || false,
         })),
         tags: postState.tags || [],
-        savedAt: Date.now(),
+        photoCount,
+        savedAt: ts,
       };
+
+      // 같은 제목이면 이전 사진 데이터 삭제
+      const duplicate = history.find(h => h.title === item.title);
+      if (duplicate && duplicate.savedAt) DraftPhotoDB.deleteHistory(duplicate.savedAt);
+
       const filtered = history.filter(h => h.title !== item.title);
       filtered.unshift(item);
-      localStorage.setItem(HISTORY_KEY, JSON.stringify(filtered.slice(0, HISTORY_MAX)));
+      const saved = filtered.slice(0, HISTORY_MAX);
+
+      // 잘려나간 항목의 사진도 정리
+      const removed = filtered.slice(HISTORY_MAX);
+      removed.forEach(h => { if (h.savedAt) DraftPhotoDB.deleteHistory(h.savedAt); });
+
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(saved));
+
+      // 사진을 IndexedDB에 저장 (타임스탬프 키)
+      const photosPerSection = postState.sections.map(sec => sec.photos || []);
+      DraftPhotoDB.saveHistory(ts, photosPerSection);
     } catch (e) { /* quota exceeded */ }
   }
 
@@ -263,17 +322,21 @@ const App = (() => {
           if (mins < 1440) return `${Math.floor(mins / 60)}시간 전`;
           return `${Math.floor(mins / 1440)}일 전`;
         };
-        const histHtml = history.map((item, idx) => `
+        const histHtml = history.map((item, idx) => {
+          const pc = item.photoCount || 0;
+          return `
           <div class="history-item">
             <div class="history-item-info">
               <div class="history-item-title">${escapeHtml(item.title || '제목 없음')}</div>
               <div class="history-item-meta">
                 <span>문단 ${(item.sections || []).length}개</span>
+                ${pc > 0 ? `<span>사진 ${pc}장</span>` : ''}
                 <span>${relTime(item.savedAt)}</span>
               </div>
             </div>
             <button class="history-restore-btn" onclick="App.restoreFromHistory(${idx})">복원</button>
-          </div>`).join('');
+          </div>`;
+        }).join('');
         html += `
           <div class="history-section">
             <div class="history-section-header">
@@ -281,7 +344,6 @@ const App = (() => {
               <button onclick="App.clearHistory()" class="history-clear-btn">전체 삭제</button>
             </div>
             <div class="history-list">${histHtml}</div>
-            <p class="history-note">※ 히스토리는 텍스트만 복원됩니다 (사진 제외)</p>
           </div>`;
       }
     } catch { /* ignore */ }
@@ -291,21 +353,25 @@ const App = (() => {
     modal.onclick = (e) => { if (e.target === modal) closeLogPanel(); };
   }
 
-  function restoreFromHistory(idx) {
+  async function restoreFromHistory(idx) {
     try {
       const raw = localStorage.getItem(HISTORY_KEY);
       if (!raw) return;
       const history = JSON.parse(raw);
       const item = history[idx];
       if (!item) return;
+
+      // IndexedDB에서 사진 불러오기
+      const savedPhotos = item.savedAt ? await DraftPhotoDB.loadHistory(item.savedAt) : null;
+
       postState = {
         title: item.title,
         greeting: item.greeting || '',
-        sections: (item.sections || []).map(sec => ({
+        sections: (item.sections || []).map((sec, si) => ({
           heading: sec.heading || '',
           content: sec.content || '',
           isQuote: sec.isQuote || false,
-          photos: [],
+          photos: (savedPhotos && savedPhotos[si]) ? savedPhotos[si] : [],
         })),
         tags: item.tags || [],
       };
@@ -316,7 +382,8 @@ const App = (() => {
       renderPostState();
       saveDraft();
       closeLogPanel();
-      showToast('이전 글을 복원했습니다 (사진 제외)');
+      const photoCount = savedPhotos ? savedPhotos.flat().length : 0;
+      showToast(`이전 글을 복원했습니다${photoCount > 0 ? ` (사진 ${photoCount}장 포함)` : ''}`);
       updateLogBadge();
       document.getElementById('preview-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (e) {
@@ -325,6 +392,12 @@ const App = (() => {
   }
 
   function clearHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      const history = raw ? JSON.parse(raw) : [];
+      const timestamps = history.map(h => h.savedAt).filter(Boolean);
+      DraftPhotoDB.clearAllHistory(timestamps);
+    } catch (e) { /* ignore */ }
     localStorage.removeItem(HISTORY_KEY);
     updateLogBadge();
     showLogPanel();
